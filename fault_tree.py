@@ -175,7 +175,7 @@ class Tree():
                 if cs[i][j][0] == '!':
                     cs[i].pop(j)
 
-        for i in range(len(cs)):
+        for i in range(len(cs)):    # Здесь еще подправлю логику
             cs[i] = list(set(cs[i]))
         result = []
         for i in cs:
