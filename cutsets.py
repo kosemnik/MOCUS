@@ -93,9 +93,6 @@ def __is_contradictory(cs):
     return is_repeat
 
 def mocus(tree):
-    print('ДЕРЕВО!!')
-    print(tree)
-    print('ОТВЕТ!!')
     result = []
     for i in range(len(tree)):
         if i == 0:

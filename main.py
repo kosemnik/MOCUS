@@ -1,9 +1,16 @@
 import fault_tree
+import random
+import time
 
 
 if __name__ == '__main__':
-    tree = fault_tree.Tree(7)
+    for i in range(1000):
+        tree = fault_tree.Tree(5)
 
-    tree.draw_tree()
-    tree.change_tree()
-    print(tree.get_cutsets())
+        mocus = tree.get_cutsets_mocus()
+        new_cutset = tree.get_cutset_new()
+
+        if new_cutset in mocus:
+            print('YES')
+        else:
+            print('NO')

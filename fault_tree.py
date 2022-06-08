@@ -1,3 +1,5 @@
+import networkx as nx
+from pyvis.network import Network
 import cutsets
 import random
 import math
@@ -6,15 +8,24 @@ import pydot
 import os
 from typing import Dict
 import itertools
+import cutsets
+import new_algorithm
 
 
 class Tree():
     def __init__(self, event_count):
-        self.tree = Tree.tree_generation(event_count)
+        self.tn = nx.DiGraph()
+        self.leaves = []
+        self.tree = self.tree_generation(event_count)
         while not self.tree:
-            self.tree = Tree.tree_generation(event_count)
+            self.tree = self.tree_generation(event_count)
+        self.tree_for_mocus = self.tree.copy()
+        self.__change_tree_for_mocus()
+        self.tree_for_new = self.tree.copy()
+        self.__new_tree()
+        self.__transport_network_transfer()
 
-    def tree_generation(event_count):
+    def tree_generation(self, event_count):
         result = []
 
         basic_events, events = [], []
@@ -33,7 +44,7 @@ class Tree():
                 is_break = True
                 for result_elem in result:
                     for children in result_elem[2]:
-                        if len(children) != 5 and "base" not in children and children not in used_events_parent:
+                        if "base" not in children and children not in used_events_parent:
                             is_break = False
                 if is_break:
                     return False
@@ -44,6 +55,12 @@ class Tree():
             count += 1
             event, children_count = Tree.__get_type()
             children = Tree.__get_children(children_count, basic_events, events, event_count, used_events)
+
+            for child in children:
+                if child not in self.leaves:
+                    self.leaves.append(child)
+            if parent in self.leaves:
+                self.leaves.pop(self.leaves.index(parent))
 
             result.append((parent, event, children))
 
@@ -76,37 +93,46 @@ class Tree():
         return event, children_count
 
     def __get_children(children_count, basic_events, events, event_count, used_events):
-        children, j = [], 0  # Здесь выбираем потомков
+        children, j = [], 0
         while j != children_count:
             gate_number = random.randint(0, 1)  # Тип потомка (базовое / не базовое)
             if gate_number == 0:
                 child = basic_events[random.randint(0, 25)]
-                while child in children:
-                    child = basic_events[random.randint(0, 25)]
+                '''while child in children:
+                    child = basic_events[random.randint(0, 25)]'''
+
+                if child in used_events:
+                    for q in range(1, len(used_events) + 2):
+                        if 'base' + child.split('base')[1] * q not in used_events:
+                            child = 'base' + child.split('base')[1] * q
+                            break
+                used_events.append(child)
                 children.append(child)
+
             else:
                 gate = events[random.randint(0, 25)]
                 if gate in used_events:
-                    for q in range(1, event_count + 1):
+                    for q in range(1, len(used_events) + 2):
                         if gate * q not in used_events:
                             gate = q * gate
                             break
                 used_events.append(gate)
                 children.append(gate)
+
             j += 1
         return children
 
-    def change_tree(self):  # Обрабатываем дерево, меняя вентили n по k для Мокуса
+    def __change_tree_for_mocus(self):  # Обрабатываем дерево, меняя вентили n по k для Мокуса
         self.dict = {}
         i = 0
         while True:
-            if "of" in self.tree[i][1]:
-                new = self.get_combinations(self.tree[i])
-                self.tree[i] = (new[0], 'Or', new[2])
+            if "of" in self.tree_for_mocus[i][1]:
+                new = self.get_combinations(self.tree_for_mocus[i])
+                self.tree_for_mocus[i] = (new[0], 'Or', new[2])
                 for j in range(len(new[2])):
-                    self.tree.insert(i + j + 1, (new[2][j], "And", self.dict[new[2][j]]))
+                    self.tree_for_mocus.insert(i + j + 1, (new[2][j], "And", self.dict[new[2][j]]))
             i += 1
-            if i == len(self.tree):
+            if i == len(self.tree_for_mocus):
                 break
 
     def get_combinations(self, event):  # Здесь мы приводим вентиль n по k к дизъюнктивной форме с отрицаниями
@@ -136,17 +162,21 @@ class Tree():
                         is_repeat = True
             if is_repeat:
                 continue
-            real_combination.append(combination)
+            res_combination = []
+            for i in range(len(combination) - 1, -1, -1):
+                if combination[i][0] != '!':
+                    res_combination.append(combination[i])
+            real_combination.append(res_combination)
 
         keys = []
-        for i in range(count):
+        for i in range(len(real_combination)):
             self.dict[event[0] + str(i)] = real_combination[i]
             keys.append(event[0] + str(i))
 
         event = (event[0], 'Or', keys)
         return event
 
-    def draw_tree(self):
+    def draw_tree(self, file_count):
         g = pydot.Dot(graph_type='digraph')
         for i in range(len(self.tree)):
             for children in range(len(self.tree[i][2])):
@@ -156,11 +186,12 @@ class Tree():
                     if self.tree[i][2][children] == self.tree[q][0]:
                         second = second + '\n' + self.tree[q][1]
                 g.add_edge(pydot.Edge(first, second))
-        g.write_png("result.png")
-        os.startfile("result.png")
+        file_name = "result" + str(file_count) + ".png"
+        g.write_png(file_name)
+        os.startfile(file_name)
 
-    def get_cutsets(self):
-        return self.result_interpretation(cutsets.mocus(self.tree))
+    def get_cutsets_mocus(self):
+        return self.result_interpretation(cutsets.mocus(self.tree_for_mocus))
 
     def result_interpretation(self, cs):
         for i in range(len(cs)):    # Убираем промежуточные события для вентилей k по n
@@ -175,7 +206,7 @@ class Tree():
                 if cs[i][j][0] == '!':
                     cs[i].pop(j)
 
-        for i in range(len(cs)):    # Здесь еще подправлю логику
+        for i in range(len(cs)):
             cs[i] = list(set(cs[i]))
         result = []
         for i in cs:
@@ -189,4 +220,33 @@ class Tree():
                 result.append(i)
         result.sort(key=len)
 
+        for i in range(len(result)):
+            result[i] = sorted(result[i])
+
         return result
+    
+    def __new_tree(self):
+        for i in range(len(self.tree_for_new)):
+            if self.tree_for_new[i][1] == 'Or':
+                self.tree_for_new[i] = (self.tree_for_new[i][0], 1, self.tree_for_new[i][2])
+            elif self.tree_for_new[i][1] == 'And':
+                self.tree_for_new[i] = (self.tree_for_new[i][0], len(self.tree_for_new[i][2]), self.tree_for_new[i][2])
+            else:
+                self.tree_for_new[i] = (self.tree_for_new[i][0], self.tree_for_new[i][1].split('of')[0], self.tree_for_new[i][2])
+
+    def __transport_network_transfer(self):
+        for elem in self.tree_for_new:
+            for child in elem[2]:
+                weight = 0
+                if int(elem[1]) > 1:
+                    weight = (int(elem[1]) - 1) / len(elem[2]) * 10000 // 1
+                self.tn.add_edge(child, elem[0], capacity=1, weight=weight)
+            if int(elem[1]) > 1:
+                self.tn.add_edge(elem[0], 'STOCK', capacity=int(elem[1]) - 1, weight=0)
+            if elem[0] == 'TOP':
+                self.tn.add_edge(elem[0], 'STOCK', capacity=int(elem[1]), weight=0)
+        for elem in self.leaves:
+            self.tn.add_edge('SOURCE', elem, capacity=1, weight=0)
+
+    def get_cutset_new(self):
+        return new_algorithm.get_cutset(self)
